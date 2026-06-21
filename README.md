@@ -77,6 +77,53 @@ If the pump never responds and swapping TXD/RXD didn't help, **swap A/B
 (green/yellow)** — reversed RS‑485 polarity is the second most common mistake.
 Keep this pair short and ideally twisted.
 
+> ⚠️ **Do not try to power the ESP32 from the COM cable.** Pentair's RS‑485
+> cable (kit `356324Z`) is an 8‑conductor harness that *does* include a **RED
+> +5 V wire**, but per Pentair it "is output from the drive only and should
+> **never be wired to another power supply**" — it is not a rail for running
+> accessories, and the green/yellow data pair carries no usable power. See
+> [Powering the ESP32](#powering-the-esp32) below.
+
+---
+
+## Powering the ESP32
+
+**Short version: give the ESP32‑S3 its own clean 5 V supply. Do not power it
+from the pump's COM port.**
+
+The SuperFlo VST COM port is an RS‑485 *signal* bus, not a power source:
+
+- **Green / yellow (Data+ / Data−)** carry low‑current differential signaling.
+  There is no current budget there to run a microcontroller.
+- The full Pentair cable (kit `356324Z`) also has a **RED +5 V conductor**, but
+  Pentair documents it as a drive output that is **not used** and must **never
+  be connected to another power supply**. It is not rated or intended to power
+  accessories, and an ESP32‑S3 with Wi‑Fi draws current spikes of several
+  hundred mA that this line is not characterized for. Back‑feeding from it
+  risks brownouts, resets, bus errors, or damage.
+
+Community ESP32/Arduino Pentair projects all do the same thing: power the
+RS‑485 transceiver's `VCC` from the **ESP's** supply, and power the ESP itself
+separately — never off the pump cable.
+
+### Recommended options
+
+1. **Separate 5 V USB supply (simplest, recommended).** A standard USB phone
+   charger / wall adapter into the dev board's USB port. Only the green/yellow
+   pair runs to the pump.
+2. **One mains‑fed AC‑DC module (single cable run, advanced).** If you want to
+   power the ESP from the same feed as the pump, install a proper
+   **mains‑to‑5 V converter** (e.g. a Mean Well IRM‑01/IRM‑02 or HLK‑PM01‑class
+   module) — never a tap onto the data wires. It must be:
+   - sized for the pump's **actual input voltage** (SuperFlo VST ships in both
+     115 V and 230 V configurations — confirm yours first),
+   - properly **fused** and **isolated**, and
+   - mounted inside the field‑wiring enclosure or its own sealed box.
+
+> ⚠️ This is outdoor, wet, mains‑voltage pool equipment. Power down at the
+> **breaker** before opening any compartment, and if you're not comfortable
+> working inside a mains junction, have an electrician do option 2.
+
 ---
 
 ## Pump‑side setup (do this on the pump keypad)
