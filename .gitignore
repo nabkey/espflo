@@ -1,0 +1,9 @@
+# ESPHome
+secrets.yaml
+.esphome/
+*.bin
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
