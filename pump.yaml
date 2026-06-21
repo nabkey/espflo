@@ -1,0 +1,167 @@
+# ESPHome configuration for a Pentair SuperFlo VST pool pump.
+#
+# Hardware:
+#   - ESP32-S3 dev board
+#   - "TTL485 V2.0" TTL <-> RS-485 module (auto-direction / hardware flow
+#     control, so there is NO DE/RE pin to drive)
+#   - Custom cable into the pump's COM port; only GREEN (Data+) and
+#     YELLOW (Data-) conductors are used.
+#
+# See README.md for full wiring and protocol notes.
+
+substitutions:
+  name: pool-pump
+  friendly_name: Pool Pump
+  # Pump address as set on the pump keypad: "1" -> 0x60, "2" -> 0x61.
+  pump_address: "0x60"
+  # Address this controller announces as on the bus.
+  controller_address: "0x21"
+  # GPIOs wired to the TTL485 module (avoid strapping/USB/flash pins).
+  tx_pin: GPIO17
+  rx_pin: GPIO18
+  # RPM the pump returns to when switched "on" without a speed given.
+  default_rpm: "2400"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  # pentair.h provides send_pentair(); it must sit next to this file.
+  includes:
+    - pentair.h
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+# ---------------------------------------------------------------------------
+# RS-485 link
+# ---------------------------------------------------------------------------
+uart:
+  id: rs485
+  tx_pin: ${tx_pin}
+  rx_pin: ${rx_pin}
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  # Uncomment to dump every byte to the log while troubleshooting wiring:
+  # debug:
+  #   direction: BOTH
+  #   dummy_receiver: false
+  #   after:
+  #     delimiter: "\n"
+  #   sequence:
+  #     - lambda: UARTDebug::log_hex(direction, bytes, ' ');
+
+globals:
+  - id: target_rpm
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+# ---------------------------------------------------------------------------
+# Low-level Pentair commands
+# ---------------------------------------------------------------------------
+script:
+  # Push the full desired state to the pump. Called on every change AND
+  # periodically as a keep-alive, because the pump drops out of remote
+  # control if it stops hearing from us for ~30 s.
+  - id: pentair_apply
+    then:
+      - if:
+          condition:
+            lambda: "return id(target_rpm) > 0;"
+          then:
+            # Take remote control -> set speed -> energize.
+            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x04, {0xFF});"
+            - delay: 50ms
+            - lambda: |-
+                uint16_t r = id(target_rpm);
+                send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x01,
+                             {0x02, 0xC4, (uint8_t)(r >> 8), (uint8_t)(r & 0xFF)});
+            - delay: 50ms
+            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x06, {0x0A});"
+          else:
+            # Power off, then release remote control back to the keypad.
+            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x06, {0x04});"
+            - delay: 50ms
+            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x04, {0x00});"
+
+interval:
+  # Keep-alive / re-assert state.
+  - interval: 15s
+    then:
+      - script.execute: pentair_apply
+
+# ---------------------------------------------------------------------------
+# Home Assistant entities
+# ---------------------------------------------------------------------------
+number:
+  - platform: template
+    name: "Pump Speed"
+    id: pump_speed
+    icon: mdi:speedometer
+    unit_of_measurement: RPM
+    min_value: 0
+    max_value: 3450
+    step: 50
+    mode: slider
+    optimistic: true
+    restore_value: true
+    set_action:
+      - globals.set:
+          id: target_rpm
+          value: !lambda "return (int) x;"
+      - script.execute: pentair_apply
+
+switch:
+  - platform: template
+    name: "Pump"
+    icon: mdi:pump
+    lambda: "return id(target_rpm) > 0;"
+    turn_on_action:
+      - number.set:
+          id: pump_speed
+          value: ${default_rpm}
+    turn_off_action:
+      - number.set:
+          id: pump_speed
+          value: 0
+
+button:
+  - platform: template
+    name: "Pump Low (1200 RPM)"
+    icon: mdi:speedometer-slow
+    on_press:
+      - number.set: { id: pump_speed, value: 1200 }
+  - platform: template
+    name: "Pump Medium (2400 RPM)"
+    icon: mdi:speedometer-medium
+    on_press:
+      - number.set: { id: pump_speed, value: 2400 }
+  - platform: template
+    name: "Pump High (3450 RPM)"
+    icon: mdi:speedometer
+    on_press:
+      - number.set: { id: pump_speed, value: 3450 }
