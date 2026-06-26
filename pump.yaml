@@ -38,19 +38,21 @@ logger:
   level: INFO
 
 api:
-  encryption:
-    key: !secret api_encryption_key
+  # No encryption key is set here so this config depends only on the Wi-Fi
+  # secrets your ESPHome dashboard already has. To encrypt HA <-> device
+  # traffic later, add a key via the dashboard (it stores one per device).
 
 ota:
   - platform: esphome
-    password: !secret ota_password
+    # Add `password:` here (or via the dashboard) if you want to lock OTA.
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
+    # Open fallback hotspot, only active if Wi-Fi fails. Add a `password:`
+    # here if you'd rather lock it.
     ssid: "${friendly_name} Fallback"
-    password: !secret fallback_ap_password
 
 captive_portal:
 
