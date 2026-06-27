@@ -162,7 +162,7 @@ Files:
 
 | File | Purpose |
 |------|---------|
-| `pump.yaml` | The ESPHome device config (UART, control logic, HA entities). Self-contained — the `send_pentair()` frame builder is defined inline (no external header), so it can be pushed to the ESPHome dashboard as a single file. |
+| `pump.yaml` | The ESPHome device config (UART, control logic, HA entities). Self-contained — the RS‑485 frame builder is defined inline (no external header), so it can be pushed to the ESPHome dashboard as a single file. |
 | `secrets.yaml.example` | Template for your Wi‑Fi secrets (`wifi_ssid`, `wifi_password`) |
 
 ### Entities you get in Home Assistant
@@ -187,8 +187,8 @@ FF 00 FF | A5 00 <dst> <src> <cmd> <len> <data...> | <ckHi> <ckLo>
 
 - `dst` = `0x60` (pump address 1), `src` = `0x21` (this controller).
 - Checksum = 16‑bit sum of every byte from `A5` through the last data byte,
-  sent big‑endian. The preamble is not summed. The inline `send_pentair()`
-  helper in `pump.yaml` does this for you.
+  sent big‑endian. The preamble is not summed. The inline frame builder in
+  `pump.yaml` (the `send` lambda in the `pentair_apply` script) does this for you.
 
 The commands this project sends (verified against community packet captures):
 
