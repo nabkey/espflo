@@ -25,9 +25,32 @@ substitutions:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  # pentair.h provides send_pentair(); it must sit next to this file.
-  includes:
-    - pentair.h
+  # send_pentair() is defined inline below (no external header needed) so this
+  # config is a single self-contained file. It is built once at boot into the
+  # `send_pentair` global, capturing the RS-485 UART.
+  on_boot:
+    # Priority 600 runs before networking (WiFi/API at 250), so the function
+    # is ready before Home Assistant can trigger any command.
+    priority: 600
+    then:
+      - lambda: |-
+          auto *uart = id(rs485);
+          id(send_pentair) = [uart](uint8_t dst, uint8_t src, uint8_t cmd,
+                                    const std::vector<uint8_t> &data) {
+            // FF 00 FF | A5 00 dst src cmd len data... | ckHi ckLo
+            // Checksum = 16-bit sum of A5 .. last data byte, big-endian.
+            std::vector<uint8_t> body = {0xA5, 0x00, dst, src, cmd,
+                                         (uint8_t) data.size()};
+            for (uint8_t b : data) body.push_back(b);
+            uint16_t sum = 0;
+            for (uint8_t b : body) sum += b;
+            std::vector<uint8_t> frame = {0xFF, 0x00, 0xFF};
+            for (uint8_t b : body) frame.push_back(b);
+            frame.push_back((uint8_t) (sum >> 8));
+            frame.push_back((uint8_t) (sum & 0xFF));
+            uart->write_array(frame);
+            uart->flush();
+          };
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -81,6 +104,11 @@ globals:
     type: int
     restore_value: true
     initial_value: "0"
+  # Holds the inline RS-485 frame sender, built in esphome.on_boot above.
+  # Signature: send_pentair(dst, src, cmd, data_bytes).
+  - id: send_pentair
+    type: std::function<void(uint8_t, uint8_t, uint8_t, const std::vector<uint8_t> &)>
+    restore_value: false
 
 # ---------------------------------------------------------------------------
 # Low-level Pentair commands
@@ -96,19 +124,19 @@ script:
             lambda: "return id(target_rpm) > 0;"
           then:
             # Take remote control -> set speed -> energize.
-            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x04, {0xFF});"
+            - lambda: "id(send_pentair)(${pump_address}, ${controller_address}, 0x04, {0xFF});"
             - delay: 50ms
             - lambda: |-
                 uint16_t r = id(target_rpm);
-                send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x01,
+                id(send_pentair)(${pump_address}, ${controller_address}, 0x01,
                              {0x02, 0xC4, (uint8_t)(r >> 8), (uint8_t)(r & 0xFF)});
             - delay: 50ms
-            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x06, {0x0A});"
+            - lambda: "id(send_pentair)(${pump_address}, ${controller_address}, 0x06, {0x0A});"
           else:
             # Power off, then release remote control back to the keypad.
-            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x06, {0x04});"
+            - lambda: "id(send_pentair)(${pump_address}, ${controller_address}, 0x06, {0x04});"
             - delay: 50ms
-            - lambda: "send_pentair(id(rs485), ${pump_address}, ${controller_address}, 0x04, {0x00});"
+            - lambda: "id(send_pentair)(${pump_address}, ${controller_address}, 0x04, {0x00});"
 
 interval:
   # Keep-alive / re-assert state.
