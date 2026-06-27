@@ -147,10 +147,16 @@ build, but pairs naturally with it).
 pip install esphome              # or use the ESPHome add-on / Docker
 
 cp secrets.yaml.example secrets.yaml
-$EDITOR secrets.yaml             # fill in Wi-Fi + keys
+$EDITOR secrets.yaml             # fill in your Wi-Fi SSID + password
 
 esphome run pump.yaml            # build, then flash over USB the first time
 ```
+
+`pump.yaml` deliberately depends on only two secrets — `wifi_ssid` and
+`wifi_password` — so that inside the Home Assistant ESPHome add-on it reuses the
+dashboard's existing shared `secrets.yaml` with nothing to reconcile. API
+encryption and an OTA password are left off by default; add them later via the
+dashboard if you want them.
 
 Files:
 
@@ -158,7 +164,7 @@ Files:
 |------|---------|
 | `pump.yaml` | The ESPHome device config (UART, control logic, HA entities) |
 | `pentair.h` | C++ helper that frames + checksums Pentair packets |
-| `secrets.yaml.example` | Template for your Wi‑Fi / API / OTA secrets |
+| `secrets.yaml.example` | Template for your Wi‑Fi secrets (`wifi_ssid`, `wifi_password`) |
 
 ### Entities you get in Home Assistant
 
